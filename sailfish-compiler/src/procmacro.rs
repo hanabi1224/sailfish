@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::iter;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use std::{env, thread};
 use syn::parse::{ParseStream, Parser, Result as ParseResult};
 use syn::punctuated::Punctuated;
@@ -219,6 +219,26 @@ fn derive_template_common_impl(
 
     impl<'path> Lock<'path> {
         fn new(path: &'path Path) -> std::io::Result<Self> {
+            static DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+            Self::new_with_timeout(path, DEFAULT_TIMEOUT)
+        }
+
+        fn new_with_timeout(
+            path: &'path Path,
+            timeout: Duration,
+        ) -> std::io::Result<Self> {
+            // Delete expired lock file if exists
+            if let Ok(metadata) = std::fs::metadata(path) {
+                if metadata.is_file() {
+                    match metadata.created() {
+                        Ok(created) if created < SystemTime::now() - timeout => {
+                            std::fs::remove_file(path)?;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
             std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
